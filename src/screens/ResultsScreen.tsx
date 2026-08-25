@@ -17,7 +17,8 @@ export function ResultsScreen({ players, round, votes, onPlayAgain, onNewGame }:
     <div className="screen results-screen">
       <h2>The word was: {round.word}</h2>
       <p>
-        Imposter{round.imposterIds.length > 1 ? 's' : ''}: {round.imposterIds.map(nameFor).join(', ')}
+        Imposter{round.imposterIds.length > 1 ? 's' : ''}:{' '}
+        <span className="result-bad">{round.imposterIds.map(nameFor).join(', ')}</span>
       </p>
       <p className={imposterCaught ? 'result-good' : 'result-bad'}>
         {imposterCaught

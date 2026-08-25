@@ -13,7 +13,7 @@ export function VotingScreen({ players, voteIndex, onVote }: Props) {
   return (
     <div className="screen voting-screen">
       <p className="hint">
-        {voteIndex + 1} / {players.length}
+        File {voteIndex + 1} of {players.length}
       </p>
       <h2>Pass the device to {voter.name}</h2>
       <p className="tagline">Who do you think is the imposter?</p>

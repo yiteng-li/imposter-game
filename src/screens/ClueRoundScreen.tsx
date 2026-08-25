@@ -15,7 +15,7 @@ export function ClueRoundScreen({ players, round, turnIndex, onNext }: Props) {
   return (
     <div className="screen clue-screen">
       <p className="hint">
-        {turnIndex + 1} / {round.order.length}
+        File {turnIndex + 1} of {round.order.length}
       </p>
       <h2>{player.name}'s turn</h2>
       <p className="tagline">Say one word or short clue out loud, then pass it on.</p>

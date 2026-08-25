@@ -23,18 +23,25 @@ export function RevealScreen({ players, round, revealIndex, onNext }: Props) {
   return (
     <div className="screen reveal-screen">
       <p className="hint">
-        {revealIndex + 1} / {round.order.length}
+        File {revealIndex + 1} of {round.order.length}
       </p>
       <h2>Pass the device to {player.name}</h2>
-      {!revealed ? (
-        <button onClick={() => setRevealed(true)}>Tap to reveal your word</button>
-      ) : (
-        <>
-          <div className="reveal-card">
-            {isImposter ? <h2>You're the imposter</h2> : <h2>{round.word}</h2>}
-          </div>
-          <button onClick={next}>{isLast ? "Got it, let's go" : 'Got it, pass to next player'}</button>
-        </>
+
+      <div className="reveal-card">
+        <div className={`redaction-text ${isImposter ? 'is-imposter' : ''}`}>
+          {isImposter ? "YOU'RE THE IMPOSTER" : round.word}
+        </div>
+        <button
+          className={`redaction-bar ${revealed ? 'redaction-bar--lifted' : ''}`}
+          onClick={() => setRevealed(true)}
+          disabled={revealed}
+        >
+          Tap to declassify
+        </button>
+      </div>
+
+      {revealed && (
+        <button onClick={next}>{isLast ? "Got it, let's go" : 'Got it, pass to next player'}</button>
       )}
     </div>
   );
