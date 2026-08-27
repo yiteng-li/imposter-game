@@ -34,3 +34,13 @@ Runs the Vitest suite for the game logic (`assignRoles`, `tallyVotes`,
 - `src/screens/` — one component per phase. `RevealScreen` and
   `VotingScreen` are built around passing the device: each shows "pass to
   <player>" and only reveals that player's information after they tap.
+
+## Multi-device play (planned)
+
+Design in progress for playing with everyone on their own phone (still
+same room, still spoken-aloud clues) via a room code instead of passing
+one device around. See
+[`docs/superpowers/specs/2026-08-27-multi-device-play-design.md`](docs/superpowers/specs/2026-08-27-multi-device-play-design.md)
+for the full design — Supabase for realtime sync + Postgres Row-Level
+Security to keep each player's role/word hidden from the others, no
+server-authoritative game logic beyond that.
