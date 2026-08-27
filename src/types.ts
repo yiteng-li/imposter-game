@@ -1,4 +1,4 @@
-export type Player = { id: string; name: string; score: number };
+export type Player = { id: string; name: string; score: number; ready: boolean };
 
 export type WordPack = { id: string; name: string; words: string[] };
 
@@ -29,7 +29,6 @@ export type Assignment = {
   playerId: string;
   isImposter: boolean;
   word: string | null;
-  ready: boolean;
 };
 
 export type Vote = {

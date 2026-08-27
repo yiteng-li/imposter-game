@@ -1,9 +1,10 @@
 # Blend In
 
-A single-page, pass-and-play social deduction word game. Everyone at the
-table gets the same secret word except the imposter(s) — pass one phone or
-laptop around, everyone gives a spoken clue in turn, then vote on who's
-faking it.
+A social deduction word game you play together in the same room, each on your
+own phone. One player creates a room and reads out the 4-letter code; everyone
+else joins with it. Everyone gets the same secret word except the imposter(s) —
+each phone shows only its own card — then everyone gives a spoken clue in turn
+and votes on who's faking it.
 
 ## Run it
 
@@ -25,8 +26,10 @@ replaces "pass the phone around."
 npm test
 ```
 
-Runs the Vitest suite for the game logic (`assignRoles`, `tallyVotes`,
-`scorePlayers`).
+Runs the Vitest suite covering the pure game logic, the room-code generator,
+the Supabase client/auth helpers, and the row mappers in `src/lib/rooms.ts`.
+`src/lib/assignments.rls.test.ts` is excluded by default — it needs a running
+`npx supabase start`; run it with `npm test -- src/lib/assignments.rls.test.ts`.
 
 ## How it works
 

@@ -114,6 +114,13 @@ h2 { font-size: 1.35rem; }
   text-transform: uppercase;
 }
 
+.error-message {
+  margin: 0;
+  color: var(--bad);
+  font-family: var(--font-utility);
+  font-size: 0.85rem;
+}
+
 .result-good { color: var(--good); font-weight: 700; }
 .result-bad { color: var(--bad); font-weight: 700; }
 

@@ -18,7 +18,7 @@ type RoomRow = {
   turn_index: number;
 };
 
-type PlayerRow = { id: string; room_id: string; name: string; score: number };
+type PlayerRow = { id: string; room_id: string; name: string; score: number; ready: boolean };
 
 export function mapRoomRow(row: RoomRow): Room {
   return {
@@ -36,7 +36,7 @@ export function mapRoomRow(row: RoomRow): Room {
 }
 
 export function mapPlayerRow(row: PlayerRow): Player {
-  return { id: row.id, name: row.name, score: row.score };
+  return { id: row.id, name: row.name, score: row.score, ready: row.ready };
 }
 
 async function myId(): Promise<string> {
@@ -82,6 +82,10 @@ export async function joinRoom(code: string, name: string): Promise<{ room: Room
   if (!roomRow) throw new Error(`No room found for code ${code.toUpperCase()}`);
 
   const room = mapRoomRow(roomRow as RoomRow);
+  // Joining mid-round would raise the "everyone's ready/voted" target past what
+  // the round can ever reach, wedging the room — and the joiner has no assignment.
+  if (room.phase !== 'setup') throw new Error('That game has already started — ask them to start a new one.');
+
   const player = await insertSelfAsPlayer(room.id, id, name);
   return { room, player };
 }
@@ -124,7 +128,6 @@ type AssignmentRow = {
   player_id: string;
   is_imposter: boolean;
   word: string | null;
-  ready: boolean;
 };
 
 type VoteRow = { room_id: string; round_number: number; voter_id: string; target_id: string };
@@ -136,7 +139,6 @@ export function mapAssignmentRow(row: AssignmentRow): Assignment {
     playerId: row.player_id,
     isImposter: row.is_imposter,
     word: row.word,
-    ready: row.ready,
   };
 }
 
@@ -162,6 +164,24 @@ export async function startRound(room: Room, players: Player[]): Promise<void> {
   const roundNumber = room.roundNumber + 1;
 
   const supabase = getSupabaseClient();
+
+  // players.ready persists across rounds (unlike assignments, which get a fresh
+  // row per round), so it must be cleared before the phase flips to 'reveal' —
+  // otherwise every client sees leftover "everyone ready" and skips the reveal.
+  const { error: readyError } = await supabase.from('players').update({ ready: false }).eq('room_id', room.id);
+  if (readyError) throw readyError;
+
+  const rows = players.map((p) => ({
+    room_id: room.id,
+    round_number: roundNumber,
+    player_id: p.id,
+    is_imposter: round.imposterIds.includes(p.id),
+    word: round.imposterIds.includes(p.id) ? null : round.word,
+  }));
+  const { error: assignError } = await supabase.from('assignments').insert(rows);
+  if (assignError) throw assignError;
+
+  // Phase last: nobody enters 'reveal' before their assignment row exists.
   const { error: roomError } = await supabase
     .from('rooms')
     .update({
@@ -173,29 +193,13 @@ export async function startRound(room: Room, players: Player[]): Promise<void> {
     })
     .eq('id', room.id);
   if (roomError) throw roomError;
-
-  const rows = players.map((p) => ({
-    room_id: room.id,
-    round_number: roundNumber,
-    player_id: p.id,
-    is_imposter: round.imposterIds.includes(p.id),
-    word: round.imposterIds.includes(p.id) ? null : round.word,
-    ready: false,
-  }));
-  const { error: assignError } = await supabase.from('assignments').insert(rows);
-  if (assignError) throw assignError;
 }
 
 export const playAgain = startRound;
 
-export async function markReady(roomId: string, roundNumber: number, playerId: string): Promise<void> {
+export async function markReady(playerId: string): Promise<void> {
   const supabase = getSupabaseClient();
-  const { error } = await supabase
-    .from('assignments')
-    .update({ ready: true })
-    .eq('room_id', roomId)
-    .eq('round_number', roundNumber)
-    .eq('player_id', playerId);
+  const { error } = await supabase.from('players').update({ ready: true }).eq('id', playerId);
   if (error) throw error;
 }
 
@@ -203,19 +207,23 @@ export async function maybeAdvanceFromReveal(roomId: string, allReady: boolean):
   if (allReady) await casPhase(roomId, 'reveal', 'clueRound');
 }
 
-export async function advanceTurn(room: Room): Promise<void> {
+/** Returns false when the update matched nothing — i.e. this client's view of the turn was stale. */
+export async function advanceTurn(room: Room): Promise<boolean> {
   const isLast = room.turnIndex + 1 >= room.turnOrder.length;
-  if (isLast) {
-    await casPhase(room.id, 'clueRound', 'voting');
-    return;
-  }
+  if (isLast) return casPhase(room.id, 'clueRound', 'voting');
+
   const supabase = getSupabaseClient();
-  await supabase
+  const { data, error } = await supabase
     .from('rooms')
     .update({ turn_index: room.turnIndex + 1 })
     .eq('id', room.id)
     .eq('phase', 'clueRound')
-    .eq('turn_index', room.turnIndex);
+    .eq('turn_index', room.turnIndex)
+    .select('id');
+  if (error) throw error;
+  const advanced = (data?.length ?? 0) > 0;
+  if (!advanced) console.warn(`advanceTurn: no-op, turn ${room.turnIndex} was already advanced elsewhere`);
+  return advanced;
 }
 
 export async function submitVote(roomId: string, roundNumber: number, voterId: string, targetId: string): Promise<void> {
@@ -253,6 +261,9 @@ export async function maybeFinishVoting(room: Room, players: Player[], votes: Vo
 
 export async function newGame(roomId: string): Promise<void> {
   const supabase = getSupabaseClient();
-  const { error } = await supabase.from('rooms').delete().eq('id', roomId);
+  // .select() so an RLS policy that blocks the delete fails loudly instead of
+  // returning success with zero rows affected.
+  const { data, error } = await supabase.from('rooms').delete().eq('id', roomId).select('id');
   if (error) throw error;
+  if ((data?.length ?? 0) === 0) throw new Error('Could not delete the room — you may no longer be a member of it.');
 }

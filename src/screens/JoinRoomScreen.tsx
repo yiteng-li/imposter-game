@@ -1,8 +1,8 @@
 import { useState } from 'react';
 
-type Props = { onJoin: (code: string, name: string) => void; onSwitchToCreate: () => void };
+type Props = { onJoin: (code: string, name: string) => void; onSwitchToCreate: () => void; error?: string | null };
 
-export function JoinRoomScreen({ onJoin, onSwitchToCreate }: Props) {
+export function JoinRoomScreen({ onJoin, onSwitchToCreate, error }: Props) {
   const [code, setCode] = useState('');
   const [name, setName] = useState('');
 
@@ -19,6 +19,7 @@ export function JoinRoomScreen({ onJoin, onSwitchToCreate }: Props) {
       <button disabled={code.trim().length !== 4 || !name.trim()} onClick={() => onJoin(code.trim(), name.trim())}>
         Join
       </button>
+      {error && <p className="error-message">{error}</p>}
       <button className="link-button" onClick={onSwitchToCreate}>
         Create a room instead
       </button>

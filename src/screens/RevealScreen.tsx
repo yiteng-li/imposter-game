@@ -3,18 +3,19 @@ import type { Assignment } from '../types';
 
 type Props = {
   myAssignment: Assignment;
+  myReady: boolean;
   totalPlayers: number;
   readyCount: number;
   onReady: () => void;
 };
 
-export function RevealScreen({ myAssignment, totalPlayers, readyCount, onReady }: Props) {
+export function RevealScreen({ myAssignment, myReady, totalPlayers, readyCount, onReady }: Props) {
   const [tapped, setTapped] = useState(false);
 
   const declassify = () => setTapped(true);
   const gotIt = () => onReady();
 
-  if (myAssignment.ready) {
+  if (myReady) {
     return (
       <div className="screen reveal-screen">
         <p className="hint">

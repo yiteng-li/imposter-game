@@ -19,6 +19,11 @@ create table players (
   room_id uuid not null references rooms(id) on delete cascade,
   name text not null,
   score int not null default 0,
+  -- "I've seen my card" for the current round. Lives here, not on assignments,
+  -- because assignments' RLS hides other players' rows until 'results' — a ready
+  -- flag there would be uncountable, so reveal could never detect "everyone's in".
+  -- Reset to false at every round start (see startRound in src/lib/rooms.ts).
+  ready boolean not null default false,
   joined_at timestamptz not null default now()
 );
 
@@ -28,7 +33,6 @@ create table assignments (
   player_id uuid not null references players(id) on delete cascade,
   is_imposter boolean not null,
   word text,
-  ready boolean not null default false,
   primary key (room_id, round_number, player_id)
 );
 
@@ -36,7 +40,9 @@ create table votes (
   room_id uuid not null references rooms(id) on delete cascade,
   round_number int not null,
   voter_id uuid not null references players(id) on delete cascade,
-  target_id uuid not null references players(id),
+  -- cascade like every other FK here: deleting a room removes players and votes
+  -- in an unspecified order, so target_id must not block the delete either.
+  target_id uuid not null references players(id) on delete cascade,
   primary key (room_id, round_number, voter_id)
 );
 
@@ -60,14 +66,20 @@ create policy "room members can update room" on rooms
   using (auth.uid() in (select id from players where players.room_id = rooms.id))
   with check (auth.uid() in (select id from players where players.room_id = rooms.id));
 
--- players: names/scores aren't secret.
+-- Without this, RLS silently makes "New game" delete zero rows.
+create policy "room members can delete room" on rooms
+  for delete
+  using (auth.uid() in (select id from players where players.room_id = rooms.id));
+
+-- players: names/scores/ready aren't secret.
 create policy "players are publicly readable" on players
   for select using (true);
 
 create policy "players insert themselves" on players
   for insert with check (auth.uid() = id);
 
-create policy "room members can update player scores" on players
+-- Covers both score writes at scoring time and each player's own ready flag.
+create policy "room members can update players" on players
   for update
   using (auth.uid() in (select id from players p2 where p2.room_id = players.room_id))
   with check (auth.uid() in (select id from players p2 where p2.room_id = players.room_id));
@@ -88,10 +100,8 @@ create policy "room members can insert assignments" on assignments
   for insert
   with check (auth.uid() in (select id from players where players.room_id = assignments.room_id));
 
-create policy "mark only your own row ready" on assignments
-  for update
-  using (player_id = auth.uid())
-  with check (player_id = auth.uid());
+-- No UPDATE policy on assignments: rows are written once at round start and
+-- never modified (readiness lives on players.ready).
 
 -- votes: not secret, readable by anyone in the room at any time.
 create policy "votes are readable by anyone" on votes

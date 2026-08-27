@@ -70,6 +70,7 @@ create table players (
   room_id uuid not null references rooms(id) on delete cascade,
   name text not null,
   score int not null default 0,
+  ready boolean not null default false,   -- "I've seen my card" for the current round
   joined_at timestamptz not null default now()
 );
 
@@ -79,7 +80,6 @@ create table assignments (
   player_id uuid not null references players(id) on delete cascade,
   is_imposter boolean not null,
   word text,                              -- null for the imposter
-  ready boolean not null default false,
   primary key (room_id, round_number, player_id)
 );
 
@@ -87,14 +87,24 @@ create table votes (
   room_id uuid not null references rooms(id) on delete cascade,
   round_number int not null,
   voter_id uuid not null references players(id) on delete cascade,
-  target_id uuid not null references players(id),
+  target_id uuid not null references players(id) on delete cascade,
   primary key (room_id, round_number, voter_id)
 );
 ```
 
+**Readiness lives on `players`, not on `assignments`.** It is a
+publicly-countable signal — "3/5 have seen their card" — and `assignments`
+is exactly the table RLS makes *un*-countable before `results`: a client
+querying it during `reveal` gets back only its own row, so a `ready` column
+there could never be summed to `N of N`. `players` has no such restriction
+(`select using (true)`), so every phone can count it. The tradeoff is that
+`players.ready` persists across rounds instead of being implicitly reset by a
+fresh `assignments` row, so `startRound`/`playAgain` must explicitly clear it
+for every player in the room before flipping the phase to `reveal`.
+
 Nothing in `rooms`, `players`, or `votes` is secret — code, phase, turn
-order, names, scores, and vote targets are all readable by anyone in the
-room, including mid-vote (matching the original pass-and-play version,
+order, names, scores, readiness, and vote targets are all readable by anyone
+in the room, including mid-vote (matching the original pass-and-play version,
 which never hid vote targets either).
 
 `assignments` is the one table with real secrets, enforced by RLS:
@@ -119,10 +129,13 @@ the same guarantee "pass the phone" gave physically, now enforced by
 Postgres instead of trust. Once the round reaches `results`, every row
 becomes visible so the results screen can say who the imposter was.
 
-`rooms` UPDATE is restricted to players who belong to that room (`auth.uid()
-in (select id from players where room_id = rooms.id)`), except the
-`setup -> reveal` transition (Start) and any `round_number` bump (Play
-again), which additionally require `host_id = auth.uid()`.
+`rooms` UPDATE — and DELETE, which "New game" needs; with RLS on and no
+DELETE policy Postgres silently deletes nothing — is restricted to players
+who belong to that room (`auth.uid() in (select id from players where room_id
+= rooms.id)`), except the `setup -> reveal` transition (Start) and any
+`round_number` bump (Play again), which additionally require `host_id =
+auth.uid()`. `players` UPDATE is likewise room-member-scoped, covering both
+score writes at scoring time and each player's own `ready` flag.
 
 ## Phase-by-phase flow
 
@@ -134,9 +147,11 @@ Referred to below as CAS (compare-and-swap).
 
 1. **Reveal**: each phone reads only its own `assignments` row for the
    current round — "You're Bob, word is *lighthouse*" or "You're the
-   IMPOSTER". Tapping "Got it" sets `ready = true`. The screen shows a live
-   "waiting… 3/5 ready" count from the Realtime subscription. Whichever
-   tap brings the count to 100% fires the CAS into `clueRound`.
+   IMPOSTER". Tapping "Got it" sets its own `players.ready = true` (see the
+   note in Data model on why readiness lives there and not on
+   `assignments`). The screen shows a live "waiting… 3/5 ready" count from
+   the Realtime subscription. Whichever tap brings the count to 100% fires
+   the CAS into `clueRound`.
 2. **Clue round**: `turn_order` / `turn_index` live on `rooms` (not
    secret, so no RLS concern). Every phone shows "It's X's turn"; X's own
    phone gets a highlighted "your turn — say it, then Next" button, other
@@ -157,7 +172,8 @@ Referred to below as CAS (compare-and-swap).
 5. **Play again / New game** (host-only): Play again bumps
    `round_number`, resets `round_scored`, re-runs `assignRoles`, inserts a
    fresh `assignments` batch and `turn_order`, and flips back to
-   `reveal`. New game deletes the room row; the `on delete cascade`s clear
+   `reveal`, and clears every player's `ready`. New game deletes the room
+   row; the `on delete cascade`s clear
    players/assignments/votes, and every phone's subscription sees the room
    vanish and drops back to the join/create screen.
 
@@ -180,6 +196,12 @@ Referred to below as CAS (compare-and-swap).
 
 - Room-code collision on create: regenerate and retry.
 - Unknown/mistyped code on join: "room not found," no special handling.
+- Joining a room whose phase is past `setup`: rejected. A late joiner would
+  raise the "everyone ready / everyone voted" target beyond what the
+  in-flight round can reach, wedging the room, and would have no assignment
+  row of their own to show.
+- Any failed action (bad code, started room, duplicate join, blocked write):
+  the message surfaces on-screen rather than leaving a dead-looking button.
 - Fewer than 3 players: reuse `assignRoles`'s existing guard — grey out
   "Start" until met.
 - Refresh mid-game: anonymous auth session persists, Realtime

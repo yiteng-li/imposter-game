@@ -10,7 +10,9 @@ type Props = {
 
 export function ClueRoundScreen({ players, turnOrder, turnIndex, me, onNext }: Props) {
   const playerId = turnOrder[turnIndex];
-  const player = players.find((p) => p.id === playerId)!;
+  // Roster and turn_order can diverge for a beat while Realtime catches up —
+  // don't crash the whole screen over a missing name.
+  const name = players.find((p) => p.id === playerId)?.name ?? 'the next player';
   const isMyTurn = playerId === me;
   const isLast = turnIndex === turnOrder.length - 1;
 
@@ -19,14 +21,14 @@ export function ClueRoundScreen({ players, turnOrder, turnIndex, me, onNext }: P
       <p className="hint">
         File {turnIndex + 1} of {turnOrder.length}
       </p>
-      <h2>{isMyTurn ? 'Your turn' : `${player.name}'s turn`}</h2>
+      <h2>{isMyTurn ? 'Your turn' : `${name}'s turn`}</h2>
       {isMyTurn ? (
         <>
           <p className="tagline">Say one word or short clue out loud, then tap Next.</p>
           <button onClick={onNext}>{isLast ? 'Everyone gave a clue — start voting' : 'Next player'}</button>
         </>
       ) : (
-        <p className="tagline">Waiting for {player.name}…</p>
+        <p className="tagline">Waiting for {name}…</p>
       )}
     </div>
   );
