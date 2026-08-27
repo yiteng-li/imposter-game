@@ -171,17 +171,10 @@ export async function startRound(room: Room, players: Player[]): Promise<void> {
   const { error: readyError } = await supabase.from('players').update({ ready: false }).eq('room_id', room.id);
   if (readyError) throw readyError;
 
-  const rows = players.map((p) => ({
-    room_id: room.id,
-    round_number: roundNumber,
-    player_id: p.id,
-    is_imposter: round.imposterIds.includes(p.id),
-    word: round.imposterIds.includes(p.id) ? null : round.word,
-  }));
-  const { error: assignError } = await supabase.from('assignments').insert(rows);
-  if (assignError) throw assignError;
-
-  // Phase last: nobody enters 'reveal' before their assignment row exists.
+  // Phase before assignments, and never the other way round: assignments' RLS
+  // opens up completely while phase is 'results', so inserting the new round's
+  // rows first would let every client fetch everyone's card for the round that
+  // hasn't started yet. Clients briefly render nothing until their row lands.
   const { error: roomError } = await supabase
     .from('rooms')
     .update({
@@ -193,6 +186,16 @@ export async function startRound(room: Room, players: Player[]): Promise<void> {
     })
     .eq('id', room.id);
   if (roomError) throw roomError;
+
+  const rows = players.map((p) => ({
+    room_id: room.id,
+    round_number: roundNumber,
+    player_id: p.id,
+    is_imposter: round.imposterIds.includes(p.id),
+    word: round.imposterIds.includes(p.id) ? null : round.word,
+  }));
+  const { error: assignError } = await supabase.from('assignments').insert(rows);
+  if (assignError) throw assignError;
 }
 
 export const playAgain = startRound;
