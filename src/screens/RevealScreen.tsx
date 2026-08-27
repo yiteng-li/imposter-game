@@ -1,48 +1,42 @@
 import { useState } from 'react';
-import type { Player, RoundSetup } from '../types';
+import type { Assignment } from '../types';
 
 type Props = {
-  players: Player[];
-  round: RoundSetup;
-  revealIndex: number;
-  onNext: () => void;
+  myAssignment: Assignment;
+  myReady: boolean;
+  totalPlayers: number;
+  readyCount: number;
+  onReady: () => void;
 };
 
-export function RevealScreen({ players, round, revealIndex, onNext }: Props) {
-  const [revealed, setRevealed] = useState(false);
-  const playerId = round.order[revealIndex];
-  const player = players.find((p) => p.id === playerId)!;
-  const isImposter = round.imposterIds.includes(playerId);
-  const isLast = revealIndex === round.order.length - 1;
+export function RevealScreen({ myAssignment, myReady, totalPlayers, readyCount, onReady }: Props) {
+  const [tapped, setTapped] = useState(false);
 
-  const next = () => {
-    setRevealed(false);
-    onNext();
-  };
+  const declassify = () => setTapped(true);
+  const gotIt = () => onReady();
+
+  if (myReady) {
+    return (
+      <div className="screen reveal-screen">
+        <p className="hint">
+          Waiting for everyone… {readyCount}/{totalPlayers} ready
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="screen reveal-screen">
-      <p className="hint">
-        File {revealIndex + 1} of {round.order.length}
-      </p>
-      <h2>Pass the device to {player.name}</h2>
-
+      <h2>Your card</h2>
       <div className="reveal-card">
-        <div className={`redaction-text ${isImposter ? 'is-imposter' : ''}`}>
-          {isImposter ? "YOU'RE THE IMPOSTER" : round.word}
+        <div className={`redaction-text ${myAssignment.isImposter ? 'is-imposter' : ''}`}>
+          {myAssignment.isImposter ? "YOU'RE THE IMPOSTER" : myAssignment.word}
         </div>
-        <button
-          className={`redaction-bar ${revealed ? 'redaction-bar--lifted' : ''}`}
-          onClick={() => setRevealed(true)}
-          disabled={revealed}
-        >
+        <button className={`redaction-bar ${tapped ? 'redaction-bar--lifted' : ''}`} onClick={declassify} disabled={tapped}>
           Tap to declassify
         </button>
       </div>
-
-      {revealed && (
-        <button onClick={next}>{isLast ? "Got it, let's go" : 'Got it, pass to next player'}</button>
-      )}
+      {tapped && <button onClick={gotIt}>Got it</button>}
     </div>
   );
 }

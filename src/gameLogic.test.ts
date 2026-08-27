@@ -5,7 +5,7 @@ import type { Player, WordPack } from './types';
 const pack: WordPack = { id: 'test', name: 'Test', words: ['Apple', 'Banana'] };
 
 function players(n: number): Player[] {
-  return Array.from({ length: n }, (_, i) => ({ id: `p${i}`, name: `Player ${i}`, score: 0 }));
+  return Array.from({ length: n }, (_, i) => ({ id: `p${i}`, name: `Player ${i}`, score: 0, ready: false }));
 }
 
 describe('assignRoles', () => {

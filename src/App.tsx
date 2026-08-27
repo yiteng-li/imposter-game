@@ -1,117 +1,120 @@
 import { useState } from 'react';
-import type { Phase, Player, RoundSetup, WordPack } from './types';
-import { assignRoles, scorePlayers, tallyVotes } from './gameLogic';
-import { SetupScreen } from './screens/SetupScreen';
+import { useRoom } from './hooks/useRoom';
+import { CreateRoomScreen } from './screens/CreateRoomScreen';
+import { JoinRoomScreen } from './screens/JoinRoomScreen';
+import { LobbyScreen } from './screens/LobbyScreen';
 import { RevealScreen } from './screens/RevealScreen';
 import { ClueRoundScreen } from './screens/ClueRoundScreen';
 import { VotingScreen } from './screens/VotingScreen';
 import { ResultsScreen } from './screens/ResultsScreen';
 
-let nextId = 0;
-
 export default function App() {
-  const [phase, setPhase] = useState<Phase>('setup');
-  const [players, setPlayers] = useState<Player[]>([]);
-  const [pack, setPack] = useState<WordPack | null>(null);
-  const [imposterCount, setImposterCount] = useState(1);
-  const [round, setRound] = useState<RoundSetup | null>(null);
-  const [revealIndex, setRevealIndex] = useState(0);
-  const [turnIndex, setTurnIndex] = useState(0);
-  const [voteIndex, setVoteIndex] = useState(0);
-  const [votes, setVotes] = useState<Record<string, string>>({});
+  const room = useRoom();
+  const [view, setView] = useState<'create' | 'join'>('create');
+  const [error, setError] = useState<string | null>(null);
 
-  const addPlayer = (name: string) => {
-    setPlayers((prev) => [...prev, { id: `p${nextId++}`, name, score: 0 }]);
-  };
-
-  const removePlayer = (id: string) => {
-    setPlayers((prev) => prev.filter((p) => p.id !== id));
-  };
-
-  const startRound = (activePack: WordPack, activeImposterCount: number, activePlayers: Player[]) => {
-    setPack(activePack);
-    setImposterCount(activeImposterCount);
-    setRound(assignRoles(activePlayers, activePack, activeImposterCount));
-    setRevealIndex(0);
-    setTurnIndex(0);
-    setVoteIndex(0);
-    setVotes({});
-    setPhase('reveal');
-  };
-
-  const handleStart = (selectedPack: WordPack, selectedImposterCount: number) => {
-    startRound(selectedPack, selectedImposterCount, players);
-  };
-
-  const handleRevealNext = () => {
-    if (!round) return;
-    if (revealIndex + 1 < round.order.length) {
-      setRevealIndex(revealIndex + 1);
-    } else {
-      setPhase('clueRound');
-    }
-  };
-
-  const handleClueNext = () => {
-    if (!round) return;
-    if (turnIndex + 1 < round.order.length) {
-      setTurnIndex(turnIndex + 1);
-    } else {
-      setPhase('voting');
-    }
-  };
-
-  const handleVote = (voterId: string, targetId: string) => {
-    const updatedVotes = { ...votes, [voterId]: targetId };
-    setVotes(updatedVotes);
-    if (voteIndex + 1 < players.length) {
-      setVoteIndex(voteIndex + 1);
-    } else if (round) {
-      const { imposterCaught } = tallyVotes(updatedVotes, round.imposterIds);
-      setPlayers(scorePlayers(players, round.imposterIds, imposterCaught));
-      setPhase('results');
-    }
-  };
-
-  const handlePlayAgain = () => {
-    if (!pack) return;
-    startRound(pack, imposterCount, players);
-  };
-
-  const handleNewGame = () => {
-    setPlayers([]);
-    setPack(null);
-    setRound(null);
-    setPhase('setup');
-  };
-
-  switch (phase) {
-    case 'setup':
-      return (
-        <SetupScreen
-          players={players}
-          onAddPlayer={addPlayer}
-          onRemovePlayer={removePlayer}
-          onStart={handleStart}
-        />
-      );
-    case 'reveal':
-      return (
-        <RevealScreen players={players} round={round!} revealIndex={revealIndex} onNext={handleRevealNext} />
-      );
-    case 'clueRound':
-      return <ClueRoundScreen players={players} round={round!} turnIndex={turnIndex} onNext={handleClueNext} />;
-    case 'voting':
-      return <VotingScreen players={players} voteIndex={voteIndex} onVote={handleVote} />;
-    case 'results':
-      return (
-        <ResultsScreen
-          players={players}
-          round={round!}
-          votes={votes}
-          onPlayAgain={handlePlayAgain}
-          onNewGame={handleNewGame}
-        />
-      );
+  // Every action is fire-and-forget from an onClick; without this its rejection
+  // goes nowhere and the button just looks broken.
+  function guard<A extends unknown[]>(fn: (...args: A) => Promise<unknown>) {
+    return (...args: A) => {
+      setError(null);
+      fn(...args).catch((e) => setError(e instanceof Error ? e.message : String(e)));
+    };
   }
+
+  if (room.status === 'loading') return null;
+
+  if (room.status === 'error') {
+    return (
+      <div className="screen setup-screen">
+        <h1>Blend In</h1>
+        <p className="error-message">{room.message}</p>
+      </div>
+    );
+  }
+
+  if (room.status === 'no-room') {
+    const switchTo = (next: 'create' | 'join') => () => {
+      setError(null);
+      setView(next);
+    };
+    return view === 'create' ? (
+      <CreateRoomScreen onCreate={guard(room.create)} onSwitchToJoin={switchTo('join')} error={error} />
+    ) : (
+      <JoinRoomScreen onJoin={guard(room.join)} onSwitchToCreate={switchTo('create')} error={error} />
+    );
+  }
+
+  const { room: r, players, assignments, myAssignment, myReady, readyCount, votes, me, isHost } = room;
+
+  const screen = (() => {
+    switch (r.phase) {
+      case 'setup':
+        return (
+          <LobbyScreen
+            room={r}
+            players={players}
+            isHost={isHost}
+            onUpdateSettings={guard(room.updateSettings)}
+            onStart={guard(room.startRound)}
+          />
+        );
+      case 'reveal':
+        if (!myAssignment) return null; // assignment row still loading in from Realtime
+        return (
+          <RevealScreen
+            myAssignment={myAssignment}
+            myReady={myReady}
+            totalPlayers={players.length}
+            readyCount={readyCount}
+            onReady={guard(room.markReady)}
+          />
+        );
+      case 'clueRound':
+        return (
+          <ClueRoundScreen
+            players={players}
+            turnOrder={r.turnOrder}
+            turnIndex={r.turnIndex}
+            me={me}
+            onNext={guard(room.advanceTurn)}
+          />
+        );
+      case 'voting': {
+        const myVote = votes.find((v) => v.voterId === me);
+        return (
+          <VotingScreen
+            players={players}
+            me={me}
+            hasVoted={!!myVote}
+            votesCastCount={votes.length}
+            onVote={guard(room.vote)}
+          />
+        );
+      }
+      case 'results': {
+        const imposterIds = assignments.filter((a) => a.isImposter).map((a) => a.playerId);
+        const word = assignments.find((a) => !a.isImposter)?.word ?? '';
+        const votesRecord = Object.fromEntries(votes.map((v) => [v.voterId, v.targetId]));
+        return (
+          <ResultsScreen
+            players={players}
+            imposterIds={imposterIds}
+            word={word}
+            votes={votesRecord}
+            isHost={isHost}
+            onPlayAgain={guard(room.playAgain)}
+            onNewGame={guard(room.newGame)}
+          />
+        );
+      }
+    }
+  })();
+
+  return (
+    <>
+      {error && <p className="error-message">{error}</p>}
+      {screen}
+    </>
+  );
 }
