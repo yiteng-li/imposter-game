@@ -169,11 +169,13 @@ Referred to below as CAS (compare-and-swap).
 4. **Results**: same data every phone; assignments are now fully visible
    per the RLS rule above, so the imposter's identity and word are shown
    to everyone.
-5. **Play again / New game** (host-only): Play again bumps
-   `round_number`, resets `round_scored`, re-runs `assignRoles`, inserts a
-   fresh `assignments` batch and `turn_order`, and flips back to
-   `reveal`, and clears every player's `ready`. New game deletes the room
-   row; the `on delete cascade`s clear
+5. **Play again / New game** (host-only): Play again clears every
+   player's `ready`, then bumps `round_number`, resets `round_scored`,
+   sets a fresh `turn_order`, and flips back to `reveal` — and only then
+   inserts the new round's `assignments` batch (re-running `assignRoles`),
+   in that order, so no client sees stale readiness against a new round
+   and no client can read the new round's cards during the `results` RLS
+   window. New game deletes the room row; the `on delete cascade`s clear
    players/assignments/votes, and every phone's subscription sees the room
    vanish and drops back to the join/create screen.
 
