@@ -118,4 +118,24 @@ describe('ensurePlayerId', () => {
     await expect(ensurePlayerId()).rejects.toThrow(/Anonymous sign-in failed/);
     await expect(ensurePlayerId()).rejects.toThrow('unknown error');
   });
+
+  it('shares one in-flight sign-in between concurrent callers, so they never diverge', async () => {
+    // Regression test: two callers racing before either resolves (e.g. React
+    // StrictMode's dev-only double effect invocation) must not each run their
+    // own getSession-then-signIn and end up with two different anonymous
+    // users. Without the in-flight-promise guard, this calls signInAnonymously
+    // twice and the two callers can resolve to different ids.
+    const mockNewUserId = 'concurrent-user-789';
+    mockAuthState = {
+      getSessionResult: { data: { session: null } },
+      signInResult: { data: { user: { id: mockNewUserId } }, error: null },
+    };
+
+    const { ensurePlayerId, getSupabaseClient } = await import('./supabase');
+    const [idA, idB] = await Promise.all([ensurePlayerId(), ensurePlayerId()]);
+
+    expect(idA).toBe(mockNewUserId);
+    expect(idB).toBe(mockNewUserId);
+    expect(getSupabaseClient().auth.signInAnonymously).toHaveBeenCalledTimes(1);
+  });
 });

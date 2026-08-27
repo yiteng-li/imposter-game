@@ -1,6 +1,6 @@
 // src/lib/assignments.rls.test.ts
 import { createClient } from '@supabase/supabase-js';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 // Supabase CLI's well-known local-only demo anon key (printed by `supabase start`;
 // only valid against 127.0.0.1, not a secret).
@@ -24,9 +24,13 @@ describe('assignments RLS', () => {
     a = await signedInClient();
     b = await signedInClient();
 
+    // A fixed code collides with itself on a second run against a persistent
+    // local DB (rooms.code is unique, and nothing here used to clean up after
+    // itself) — random per run, like full-round.integration.test.ts.
+    const code = `R${Math.random().toString(36).slice(2, 5).toUpperCase()}`;
     const { data: room, error: roomError } = await a.client
       .from('rooms')
-      .insert({ code: 'TEST', host_id: a.userId })
+      .insert({ code, host_id: a.userId })
       .select()
       .single();
     if (roomError) throw roomError;
@@ -39,6 +43,10 @@ describe('assignments RLS', () => {
       { room_id: roomId, round_number: 1, player_id: a.userId, is_imposter: false, word: 'lighthouse' },
       { room_id: roomId, round_number: 1, player_id: b.userId, is_imposter: true, word: null },
     ]);
+  });
+
+  afterAll(async () => {
+    await a.client.from('rooms').delete().eq('id', roomId);
   });
 
   it('cannot read another player\'s assignment before results', async () => {
