@@ -2,6 +2,8 @@ import { getSupabaseClient } from './supabase';
 import { generateRoomCode } from './roomCode';
 import { wordPacks } from '../wordPacks';
 import type { Player, Room } from '../types';
+import { assignRoles, scorePlayers, tallyVotes } from '../gameLogic';
+import type { Assignment, Vote } from '../types';
 
 type RoomRow = {
   id: string;
@@ -113,5 +115,144 @@ export async function updateRoomSettings(roomId: string, packId: string, imposte
     .from('rooms')
     .update({ pack_id: packId, imposter_count: imposterCount })
     .eq('id', roomId);
+  if (error) throw error;
+}
+
+type AssignmentRow = {
+  room_id: string;
+  round_number: number;
+  player_id: string;
+  is_imposter: boolean;
+  word: string | null;
+  ready: boolean;
+};
+
+type VoteRow = { room_id: string; round_number: number; voter_id: string; target_id: string };
+
+export function mapAssignmentRow(row: AssignmentRow): Assignment {
+  return {
+    roomId: row.room_id,
+    roundNumber: row.round_number,
+    playerId: row.player_id,
+    isImposter: row.is_imposter,
+    word: row.word,
+    ready: row.ready,
+  };
+}
+
+export function mapVoteRow(row: VoteRow): Vote {
+  return { roomId: row.room_id, roundNumber: row.round_number, voterId: row.voter_id, targetId: row.target_id };
+}
+
+async function casPhase(roomId: string, from: string, to: string, extra: Record<string, unknown> = {}): Promise<boolean> {
+  const supabase = getSupabaseClient();
+  const { data, error } = await supabase
+    .from('rooms')
+    .update({ phase: to, ...extra })
+    .eq('id', roomId)
+    .eq('phase', from)
+    .select('id');
+  if (error) throw error;
+  return (data?.length ?? 0) > 0;
+}
+
+export async function startRound(room: Room, players: Player[]): Promise<void> {
+  const pack = wordPacks.find((p) => p.id === room.packId) ?? wordPacks[0];
+  const round = assignRoles(players, pack, room.imposterCount);
+  const roundNumber = room.roundNumber + 1;
+
+  const supabase = getSupabaseClient();
+  const { error: roomError } = await supabase
+    .from('rooms')
+    .update({
+      phase: 'reveal',
+      round_number: roundNumber,
+      round_scored: false,
+      turn_order: round.order,
+      turn_index: 0,
+    })
+    .eq('id', room.id);
+  if (roomError) throw roomError;
+
+  const rows = players.map((p) => ({
+    room_id: room.id,
+    round_number: roundNumber,
+    player_id: p.id,
+    is_imposter: round.imposterIds.includes(p.id),
+    word: round.imposterIds.includes(p.id) ? null : round.word,
+    ready: false,
+  }));
+  const { error: assignError } = await supabase.from('assignments').insert(rows);
+  if (assignError) throw assignError;
+}
+
+export const playAgain = startRound;
+
+export async function markReady(roomId: string, roundNumber: number, playerId: string): Promise<void> {
+  const supabase = getSupabaseClient();
+  const { error } = await supabase
+    .from('assignments')
+    .update({ ready: true })
+    .eq('room_id', roomId)
+    .eq('round_number', roundNumber)
+    .eq('player_id', playerId);
+  if (error) throw error;
+}
+
+export async function maybeAdvanceFromReveal(roomId: string, allReady: boolean): Promise<void> {
+  if (allReady) await casPhase(roomId, 'reveal', 'clueRound');
+}
+
+export async function advanceTurn(room: Room): Promise<void> {
+  const isLast = room.turnIndex + 1 >= room.turnOrder.length;
+  if (isLast) {
+    await casPhase(room.id, 'clueRound', 'voting');
+    return;
+  }
+  const supabase = getSupabaseClient();
+  await supabase
+    .from('rooms')
+    .update({ turn_index: room.turnIndex + 1 })
+    .eq('id', room.id)
+    .eq('phase', 'clueRound')
+    .eq('turn_index', room.turnIndex);
+}
+
+export async function submitVote(roomId: string, roundNumber: number, voterId: string, targetId: string): Promise<void> {
+  const supabase = getSupabaseClient();
+  const { error } = await supabase
+    .from('votes')
+    .upsert({ room_id: roomId, round_number: roundNumber, voter_id: voterId, target_id: targetId });
+  if (error) throw error;
+}
+
+export async function maybeFinishVoting(room: Room, players: Player[], votes: Vote[]): Promise<void> {
+  if (votes.length < players.length) return;
+
+  const won = await casPhase(room.id, 'voting', 'results', { round_scored: true });
+  if (!won) return; // another client already finished this round
+
+  const supabase = getSupabaseClient();
+  const { data: assignmentRows, error } = await supabase
+    .from('assignments')
+    .select()
+    .eq('room_id', room.id)
+    .eq('round_number', room.roundNumber);
+  if (error) throw error;
+  const imposterIds = (assignmentRows as AssignmentRow[]).filter((a) => a.is_imposter).map((a) => a.player_id);
+
+  const votesRecord = Object.fromEntries(votes.map((v) => [v.voterId, v.targetId]));
+  const { imposterCaught } = tallyVotes(votesRecord, imposterIds);
+  const scored = scorePlayers(players, imposterIds, imposterCaught);
+
+  for (const p of scored) {
+    const { error: scoreError } = await supabase.from('players').update({ score: p.score }).eq('id', p.id);
+    if (scoreError) throw scoreError;
+  }
+}
+
+export async function newGame(roomId: string): Promise<void> {
+  const supabase = getSupabaseClient();
+  const { error } = await supabase.from('rooms').delete().eq('id', roomId);
   if (error) throw error;
 }
