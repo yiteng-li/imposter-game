@@ -1,24 +1,25 @@
-import type { Player, RoundSetup } from '../types';
+import type { Player } from '../types';
 import { tallyVotes } from '../gameLogic';
 
 type Props = {
   players: Player[];
-  round: RoundSetup;
+  imposterIds: string[];
+  word: string;
   votes: Record<string, string>;
+  isHost: boolean;
   onPlayAgain: () => void;
   onNewGame: () => void;
 };
 
-export function ResultsScreen({ players, round, votes, onPlayAgain, onNewGame }: Props) {
+export function ResultsScreen({ players, imposterIds, word, votes, isHost, onPlayAgain, onNewGame }: Props) {
   const nameFor = (id: string) => players.find((p) => p.id === id)?.name ?? '?';
-  const { winners, imposterCaught } = tallyVotes(votes, round.imposterIds);
+  const { winners, imposterCaught } = tallyVotes(votes, imposterIds);
 
   return (
     <div className="screen results-screen">
-      <h2>The word was: {round.word}</h2>
+      <h2>The word was: {word}</h2>
       <p>
-        Imposter{round.imposterIds.length > 1 ? 's' : ''}:{' '}
-        <span className="result-bad">{round.imposterIds.map(nameFor).join(', ')}</span>
+        Imposter{imposterIds.length > 1 ? 's' : ''}: <span className="result-bad">{imposterIds.map(nameFor).join(', ')}</span>
       </p>
       <p className={imposterCaught ? 'result-good' : 'result-bad'}>
         {imposterCaught
@@ -34,10 +35,14 @@ export function ResultsScreen({ players, round, votes, onPlayAgain, onNewGame }:
             </li>
           ))}
       </ul>
-      <div className="results-actions">
-        <button onClick={onPlayAgain}>Play Again (same players)</button>
-        <button onClick={onNewGame}>New Game</button>
-      </div>
+      {isHost ? (
+        <div className="results-actions">
+          <button onClick={onPlayAgain}>Play Again (same players)</button>
+          <button onClick={onNewGame}>New Game</button>
+        </div>
+      ) : (
+        <p className="hint">Waiting for the host…</p>
+      )}
     </div>
   );
 }
