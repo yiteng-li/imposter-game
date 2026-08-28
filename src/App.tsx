@@ -111,10 +111,17 @@ export default function App() {
     }
   })();
 
+  // Every phase can be left; hosts can also end the room outright. Results
+  // already has its own equivalent "New Game" button (the same room.newGame
+  // action), so skip the duplicate control there.
   return (
     <>
       {error && <p className="error-message">{error}</p>}
       {screen}
+      <div className="room-bar">
+        <button onClick={guard(room.leaveRoom)}>Leave</button>
+        {isHost && r.phase !== 'results' && <button onClick={guard(room.newGame)}>End Game</button>}
+      </div>
     </>
   );
 }

@@ -318,6 +318,31 @@ button:disabled {
   * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
 
+/* -- room bar: leave / end game (secondary, sits under the case file) ---- */
+
+.room-bar {
+  display: flex;
+  justify-content: center;
+  gap: 1.25rem;
+  margin-top: 0.75rem;
+}
+
+.room-bar button {
+  /* Sits on the dark page background, not the paper card — --ink/--ink-soft
+     are calibrated for text on paper and would be low-contrast here. */
+  background: none;
+  border: none;
+  padding: 0.2rem 0;
+  color: var(--paper-line);
+  font-family: var(--font-utility);
+  font-size: 0.68rem;
+  letter-spacing: 0.12em;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.room-bar button:hover:not(:disabled) { color: var(--paper); transform: none; }
+
 @media (max-width: 360px) {
   .screen { padding: 2.1rem 1.4rem 1.75rem; }
   h1 { font-size: 1.75rem; }

@@ -13,6 +13,7 @@ import {
   maybeFinishVoting,
   playAgain as playAgainRow,
   newGame as newGameRow,
+  leaveRoom as leaveRoomRow,
   mapAssignmentRow,
   mapVoteRow,
 } from '../lib/rooms';
@@ -198,6 +199,11 @@ export function useRoom() {
     newGame: async () => {
       if (room.hostId !== me) return;
       await newGameRow(room.id); // throws if the delete matched nothing
+      localStorage.removeItem(STORAGE_KEY);
+      setState({ status: 'no-room' });
+    },
+    leaveRoom: async () => {
+      await leaveRoomRow(me); // throws if the delete matched nothing
       localStorage.removeItem(STORAGE_KEY);
       setState({ status: 'no-room' });
     },

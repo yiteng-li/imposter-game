@@ -80,3 +80,44 @@ describe('assignments RLS', () => {
     expect(data![0].is_imposter).toBe(true);
   });
 });
+
+describe('players DELETE RLS (leave room)', () => {
+  let roomId: string;
+  let a: Awaited<ReturnType<typeof signedInClient>>;
+  let b: Awaited<ReturnType<typeof signedInClient>>;
+
+  beforeAll(async () => {
+    a = await signedInClient();
+    b = await signedInClient();
+
+    const code = `L${Math.random().toString(36).slice(2, 5).toUpperCase()}`;
+    const { data: room, error: roomError } = await a.client
+      .from('rooms')
+      .insert({ code, host_id: a.userId })
+      .select()
+      .single();
+    if (roomError) throw roomError;
+    roomId = room.id;
+
+    await a.client.from('players').insert({ id: a.userId, room_id: roomId, name: 'A' });
+    await b.client.from('players').insert({ id: b.userId, room_id: roomId, name: 'B' });
+  });
+
+  afterAll(async () => {
+    await a.client.from('rooms').delete().eq('id', roomId);
+  });
+
+  it('cannot delete another player\'s row', async () => {
+    const { data } = await a.client.from('players').delete().eq('id', b.userId).select('id');
+    expect(data).toEqual([]); // RLS silently matches zero rows, not an error
+  });
+
+  it('can delete its own row', async () => {
+    const { data } = await b.client.from('players').delete().eq('id', b.userId).select('id');
+    expect(data).toHaveLength(1);
+
+    const { data: remaining } = await a.client.from('players').select().eq('room_id', roomId);
+    expect(remaining).toHaveLength(1);
+    expect(remaining![0].id).toBe(a.userId);
+  });
+});

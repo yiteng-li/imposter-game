@@ -270,3 +270,10 @@ export async function newGame(roomId: string): Promise<void> {
   if (error) throw error;
   if ((data?.length ?? 0) === 0) throw new Error('Could not delete the room — you may no longer be a member of it.');
 }
+
+export async function leaveRoom(playerId: string): Promise<void> {
+  const supabase = getSupabaseClient();
+  const { data, error } = await supabase.from('players').delete().eq('id', playerId).select('id');
+  if (error) throw error;
+  if ((data?.length ?? 0) === 0) throw new Error('Could not leave the room — your player row was already gone.');
+}

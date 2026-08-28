@@ -179,6 +179,36 @@ Referred to below as CAS (compare-and-swap).
    players/assignments/votes, and every phone's subscription sees the room
    vanish and drops back to the join/create screen.
 
+## Leaving and ending early
+
+Two escape hatches, available from every phase (not just `results`), rendered
+as a small persistent bar under whichever screen is showing rather than
+threaded into each screen's own props:
+
+- **Leave** (anyone): deletes the caller's own `players` row — RLS scopes
+  this to `auth.uid() = id`, narrower than the general room-membership
+  update policy, since there's never a reason to remove someone else. The
+  existing cascades and phase math absorb it without new logic: a departure
+  during `reveal` or `voting` just shrinks the denominator in the
+  everyone's-ready / everyone's-voted checks (both already `players.length`-
+  based), and a departing voter's own `votes` row cascades away with them.
+- **End Game** (host only): identical to "New game" — same `room.newGame`
+  call — just exposed from every phase instead of only `results` (which
+  keeps its own equivalent button, so the bar hides "End Game" there to
+  avoid showing the same action twice).
+
+**Known gap, accepted rather than solved here:** if the current turn-holder
+leaves mid-`clueRound`, no device matches that turn anymore and the round
+wedges — deliberately left to the host's End Game button rather than adding
+auto-skip logic, consistent with the project's existing "no timeout/kick
+mechanism" stance. Likewise, if the *host* leaves, `room.hostId` still points
+at the departed player, and no remaining client's `isHost` check passes — the
+room becomes unreachable via the UI (though RLS itself would still permit any
+remaining member to delete it, since the room-delete policy is
+membership-scoped, not host-scoped). No host-transfer-on-leave is
+implemented; an abandoned room simply sits until someone leaves it into
+non-existence one player at a time, or is cleaned up out of band.
+
 ## Reuse vs. rework
 
 - **Untouched**: `gameLogic.ts` (`assignRoles`, `tallyVotes`,
